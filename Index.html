@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Flappy Duck - Chibi Pastel</title>
+  <style>
+    html,body {
+      height:100%;
+      margin:0;
+      background:linear-gradient(#a0e9ff,#f8f3ff);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-family:system-ui,Segoe UI,Roboto
+    }
+    #game {
+      box-shadow:0 6px 20px rgba(0,0,0,0.25);
+      border-radius:12px;
+      overflow:hidden;
+      position:relative;
+      background:linear-gradient(#a0e9ff,#eaf6ff);
+    }
+    canvas { display:block; background:transparent; }
+    .overlay {
+      position:absolute;left:50%;top:50%;
+      transform:translate(-50%,-50%);
+      text-align:center;color:#333;
+      pointer-events:none;
+    }
+    .btn {
+      pointer-events:all;
+      background:#ffdb4d;
+      color:#222;
+      padding:10px 18px;
+      border-radius:8px;
+      border:none;
+      font-weight:700;
+      cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,0.15);
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <canvas id="c" width="420" height="640"></canvas>
+    <div class="overlay" id="ui" style="display:none">
+      <h1 id="msg" style="margin:0 0 12px;font-size:22px;text-shadow:0 2px 6px rgba(255,255,255,0.5)"></h1>
+      <button id="startBtn" class="btn">Start</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const ui = document.getElementById('ui');
+  const msg = document.getElementById('msg');
+  const startBtn = document.getElementById('startBtn');
+
+  const W = canvas.width, H = canvas.height;
+  const GRAVITY = 0.45, FLAP = -8.5;
+  const PIPE_GAP = 160, PIPE_W = 60, PIPE_INTERVAL = 1500;
+
+  const duckImg = new Image();
+  duckImg.src = 'duck.png'; // chibi pastel duck image
+
+  let bird, pipes, lastPipeTime, score, highScore, running, lastTime;
+
+  function reset(){
+    bird = { x: 100, y: H/2, vy:0, radius:26, rotation:0 };
+    pipes = [];
+    lastPipeTime = 0;
+    score = 0;
+    highScore = Number(localStorage.getItem('flappy_high')||0);
+    running = false;
+    ui.style.display = 'block';
+    msg.textContent = 'Flappy Duck — Click or tap to flap';
+    startBtn.textContent = 'Start';
+  }
+
+  function start(){
+    running = true; ui.style.display = 'none'; lastTime = performance.now();
+    lastPipeTime = 0; score = 0;
+    bird.y = H/2; bird.vy = 0; bird.rotation = 0; pipes = [];
+    loop(performance.now());
+  }
+
+  function gameOver(){
+    running = false; ui.style.display = 'block';
+    msg.innerHTML = `Game Over — Score: ${score} <br> High Score: ${Math.max(score, highScore)}`;
+    startBtn.textContent = 'Play Again';
+    if(score > highScore){ localStorage.setItem('flappy_high', score); }
+  }
+
+  function spawnPipe(){
+    const minY = 80; const maxY = H - 80 - PIPE_GAP;
+    const topY = Math.floor(Math.random()*(maxY-minY+1))+minY;
+    pipes.push({ x: W + 20, top: topY, passed:false });
+  }
+
+  function flap(){
+    if(!running){ start(); return; }
+    bird.vy = FLAP;
+  }
+
+  function rectCircleColliding(cx, cy, r, rx, ry, rw, rh){
+    const closestX = Math.max(rx, Math.min(cx, rx+rw));
+    const closestY = Math.max(ry, Math.min(cy, ry+rh));
+    const dx = cx - closestX; const dy = cy - closestY;
+    return (dx*dx + dy*dy) <= (r*r);
+  }
+
+  function update(dt){
+    bird.vy += GRAVITY * dt/16.67;
+    bird.y += bird.vy * dt/16.67;
+    bird.rotation = Math.max(-0.4, Math.min(1.0, bird.vy / 12));
+
+    lastPipeTime += dt;
+    if(lastPipeTime > PIPE_INTERVAL){ spawnPipe(); lastPipeTime = 0; }
+
+    for(let i=pipes.length-1;i>=0;i--){
+      const p = pipes[i]; p.x -= 2.2 * dt/16.67;
+      if(!p.passed && p.x + PIPE_W < bird.x - bird.radius){ p.passed = true; score++; }
+      if(p.x + PIPE_W < -50) pipes.splice(i,1);
+    }
+
+    if(bird.y + bird.radius >= H-40 || bird.y - bird.radius <= 0){ gameOver(); }
+
+    for(const p of pipes){
+      const topRect = { x: p.x, y:0, w: PIPE_W, h: p.top };
+      const botRect = { x: p.x, y: p.top + PIPE_GAP, w: PIPE_W, h: H - (p.top + PIPE_GAP) - 40 };
+      if(rectCircleColliding(bird.x, bird.y, bird.radius, topRect.x, topRect.y, topRect.w, topRect.h) ||
+         rectCircleColliding(bird.x, bird.y, bird.radius, botRect.x, botRect.y, botRect.w, botRect.h)){
+        gameOver();
+      }
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    // pipes
+    for(const p of pipes){
+      ctx.fillStyle = '#7adf72';
+      ctx.fillRect(p.x, 0, PIPE_W, p.top);
+      ctx.fillRect(p.x, p.top + PIPE_GAP, PIPE_W, H - (p.top + PIPE_GAP) - 40);
+      ctx.fillStyle = '#55c857';
+      ctx.fillRect(p.x-6, p.top-12, PIPE_W+12, 12);
+      ctx.fillRect(p.x-6, p.top + PIPE_GAP, PIPE_W+12, 12);
+    }
+
+    // ground
+    ctx.fillStyle = '#e3b56a';
+    ctx.fillRect(0, H-40, W, 40);
+    ctx.fillStyle = '#d79c4f';
+    ctx.fillRect(0, H-40, W, 6);
+
+    // duck image
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.rotation);
+    ctx.drawImage(duckImg, -bird.radius, -bird.radius, bird.radius*2, bird.radius*2);
+    ctx.restore();
+
+    // score
+    ctx.fillStyle = '#333'; ctx.font = 'bold 36px system-ui,Arial'; ctx.textAlign = 'center';
+    ctx.fillText(score, W/2, 80);
+  }
+
+  function loop(now){
+    if(!lastTime) lastTime = now;
+    const dt = Math.min(40, now - lastTime);
+    lastTime = now;
+    if(running){ update(dt); draw(); requestAnimationFrame(loop); } else { draw(); }
+  }
+
+  // controls
+  canvas.addEventListener('mousedown', flap);
+  canvas.addEventListener('touchstart', e=>{ e.preventDefault(); flap(); }, {passive:false});
+  window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); flap(); }});
+  startBtn.addEventListener('click', start);
+
+  function fit(){
+    const maxW = Math.min(window.innerWidth-20, 420);
+    const scale = maxW / 420;
+    const g = document.getElementById('game');
+    g.style.transform = `scale(${scale})`;
+    g.style.transformOrigin = 'top left';
+    g.style.width = `${420*scale}px`;
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  reset();
+  draw();
+})();
+</script>
+</body>
+</html>
